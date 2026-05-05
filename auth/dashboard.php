@@ -60,6 +60,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+
+    // Delete business (cleans up status logs + image file)
+    if (isset($_POST['delete_business'])) {
+        $bid = (int)$_POST['delete_business_id'];
+        if ($bid > 0) {
+            if ($is_admin) {
+                $chk = $conn->prepare("SELECT image FROM businesses WHERE id=?");
+                $chk->bind_param("i", $bid);
+            } else {
+                $chk = $conn->prepare("SELECT image FROM businesses WHERE id=? AND user_id=?");
+                $chk->bind_param("ii", $bid, $user_id);
+            }
+            $chk->execute();
+            $biz_row = $chk->get_result()->fetch_assoc();
+            $chk->close();
+            if ($biz_row) {
+                $sl = $conn->prepare("DELETE FROM business_status_logs WHERE business_id=?");
+                $sl->bind_param("i", $bid);
+                $sl->execute(); $sl->close();
+                $s = $conn->prepare("DELETE FROM businesses WHERE id=?");
+                $s->bind_param("i", $bid);
+                if ($s->execute()) {
+                    if (!empty($biz_row['image'])) {
+                        $img_path = __DIR__ . '/../uploads/' . $biz_row['image'];
+                        if (file_exists($img_path)) unlink($img_path);
+                    }
+                    $msg = 'Business deleted successfully.';
+                } else { $err = 'Failed to delete business.'; }
+                $s->close();
+            } else { $err = 'Business not found or access denied.'; }
+        }
+    }
     // Admin: create user
     if (isset($_POST['create_user']) && $is_admin) {
         $nname = trim($_POST['new_full_name'] ?? '');
@@ -301,6 +333,7 @@ tr:hover td{background:#fafafa}
                         <td style="display:flex;gap:6px;flex-wrap:wrap">
                             <a href="edit-business.php?id=<?php echo $b['id']; ?>" class="btn-sm btn-blue">Edit</a>
                             <a href="../business_details.php?id=<?php echo $b['id']; ?>" class="btn-sm btn-green" target="_blank">View</a>
+                            <button class="btn-sm btn-red" onclick="confirmDeleteBusiness(<?php echo $b['id']; ?>,'<?php echo htmlspecialchars(addslashes($b['name'])); ?>')">Delete</button>
                             <?php if ($is_admin): ?>
                             <form method="POST" style="margin:0">
                                 <input type="hidden" name="business_id" value="<?php echo $b['id']; ?>">
@@ -431,15 +464,31 @@ tr:hover td{background:#fafafa}
 
 </div>
 
+<!-- Delete User Modal -->
 <div class="modal-overlay" id="deleteModal">
     <div class="modal">
         <h4>Delete Account</h4>
         <p id="deleteMsg">Are you sure? This cannot be undone.</p>
         <div class="modal-actions">
-            <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+            <button class="btn-cancel" onclick="closeModal('deleteModal')">Cancel</button>
             <form method="POST" style="margin:0">
                 <input type="hidden" name="delete_user_id" id="deleteId">
                 <button type="submit" name="delete_user" class="btn-sm btn-red" style="padding:9px 18px;font-size:14px">Yes, Delete</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Business Modal -->
+<div class="modal-overlay" id="deleteBusinessModal">
+    <div class="modal">
+        <h4>Delete Business</h4>
+        <p id="deleteBusinessMsg">Are you sure you want to delete this business? This cannot be undone.</p>
+        <div class="modal-actions">
+            <button class="btn-cancel" onclick="closeModal('deleteBusinessModal')">Cancel</button>
+            <form method="POST" style="margin:0">
+                <input type="hidden" name="delete_business_id" id="deleteBusinessId">
+                <button type="submit" name="delete_business" class="btn-sm btn-red" style="padding:9px 18px;font-size:14px">Yes, Delete</button>
             </form>
         </div>
     </div>
@@ -457,11 +506,19 @@ function confirmDelete(id, name) {
     document.getElementById('deleteMsg').textContent = 'Delete account for "' + name + '"? This cannot be undone.';
     document.getElementById('deleteModal').classList.add('active');
 }
-function closeModal() {
-    document.getElementById('deleteModal').classList.remove('active');
+function confirmDeleteBusiness(id, name) {
+    document.getElementById('deleteBusinessId').value = id;
+    document.getElementById('deleteBusinessMsg').textContent = 'Delete "' + name + '"? This cannot be undone.';
+    document.getElementById('deleteBusinessModal').classList.add('active');
+}
+function closeModal(modalId) {
+    document.getElementById(modalId).classList.remove('active');
 }
 document.getElementById('deleteModal').addEventListener('click', function(e) {
-    if (e.target === this) closeModal();
+    if (e.target === this) closeModal('deleteModal');
+});
+document.getElementById('deleteBusinessModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal('deleteBusinessModal');
 });
 </script>
 </body>
